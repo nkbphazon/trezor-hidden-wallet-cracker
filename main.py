@@ -10,8 +10,11 @@ from bip_utils import Bip39Mnemonic, Bip39SeedGenerator, Bip44Changes, Bip84, Bi
 # leave as None to spawn one process per logical CPU core or override with a numeric value
 POOL_SIZE = None
 
-# the known wallet address to try to match
-WALLET_ADDRESS = "bc1qehae3svrdrm4j0wjv85vhshyt9lzv7xl579uws"
+# potential known wallet addresses to try to match
+WALLET_ADDRESSES = set([
+    "bc1qddthiswillnotbefoundbecauseitisnotreal",
+    "bc1qehae3svrdrm4j0wjv85vhshyt9lzv7xl579uws"
+])
 
 # the (zero-based) wallet address index - more than one wallet address can be derived from the same key
 # the first number is the starting index, the second number is the stop index
@@ -38,7 +41,7 @@ def interrrupt_handler(n, f):
 def generate_wordlist(character_set, number_characters):
     return[x for x in itertools.product(*([character_set] * number_characters))]
 
-def crack(address:str, passphrase:str, mnemonic: Bip39Mnemonic, address_numbers: range = range(0,1)):
+def crack(addresses:set, passphrase:str, mnemonic: Bip39Mnemonic, address_numbers: range = range(0,1)):
     seed = Bip39SeedGenerator(mnemonic).Generate(passphrase=passphrase)
     master_key = Bip84.FromSeed(seed, Bip84Coins.BITCOIN)
     account_key = master_key.Purpose().Coin().Account(0)   # m/84'/0'/0'
@@ -47,14 +50,14 @@ def crack(address:str, passphrase:str, mnemonic: Bip39Mnemonic, address_numbers:
     for i in address_numbers:
         address_key = chain_key.AddressIndex(i)            # m/84'/0'/0'/0/i
         generated_address = address_key.PublicKey().ToAddress()
-        if generated_address == address:
-            print(f"Found passphrase: {passphrase} on address index {i}")
+        if generated_address in addresses:
+            print(f"Found passphrase '{passphrase}' for address {generated_address} on index {i}")
             return generated_address
 
 def crack_multi(args):
     signal(SIGINT, interrrupt_handler)
-    address, passphrase, mnemonic, address_numbers = args[0], args[1], args[2], args[3]
-    crack(address=address, passphrase=passphrase, mnemonic=mnemonic, address_numbers=address_numbers)
+    addresses, passphrase, mnemonic, address_numbers = args[0], args[1], args[2], args[3]
+    crack(addresses=addresses, passphrase=passphrase, mnemonic=mnemonic, address_numbers=address_numbers)
 
 def main():
     assert len(CHARACTER_SET) == len(set(CHARACTER_SET)), "character set contains duplicate values"
@@ -75,7 +78,7 @@ def main():
 
     pool = ProcessPool(POOL_SIZE)
     start = time.time()
-    pool.map(crack_multi, zip(itertools.repeat(WALLET_ADDRESS), passphrases, itertools.repeat(MNEMONIC), itertools.repeat(WALLET_ADDRESS_INDICES)))
+    pool.map(crack_multi, zip(itertools.repeat(WALLET_ADDRESSES), passphrases, itertools.repeat(MNEMONIC), itertools.repeat(WALLET_ADDRESS_INDICES)))
     pool.close()
     pool.join()
 
